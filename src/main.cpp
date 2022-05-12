@@ -28,8 +28,6 @@ const uint8_t bsec_config[] = {
 };
 #define STATE_SAVE_PERIOD UINT32_C(360 * 60 * 1000)
 
-String output;
-
 void checkBME();
 void updateState();
 void loadState();
@@ -116,7 +114,7 @@ void loop(void)
   float iaq = bme.iaq;
   float co2 = bme.co2Equivalent;
   float voc = bme.breathVocEquivalent;
-  float iaq_acc = bme.iaqAccuracy;
+  uint8_t iaq_acc = bme.iaqAccuracy;
   float gas_perc = bme.gasPercentage;
   float run_in = bme.runInStatus;
 
@@ -133,6 +131,11 @@ void loop(void)
     datapoint.addField("co2", co2);
     datapoint.addField("voc", voc);
     datapoint.addField("gas_perc", gas_perc);
+
+    if (!influxdb.writePoint(datapoint))
+    {
+      Serial.println("Failed to connect to influxdb: " + String(influxdb.getLastErrorMessage()));
+    }
   }
 
   display.setCursor(0, 0);
