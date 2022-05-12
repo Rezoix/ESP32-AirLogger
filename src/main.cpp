@@ -24,9 +24,11 @@ Bsec bme;
 uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
 uint16_t stateUpdateCounter = 0;
 const uint8_t bsec_config[] = {
-#include "config/generic_33v_3s_28d/bsec_iaq.txt"
+#include "config/generic_33v_3s_4d/bsec_iaq.txt"
 };
 #define STATE_SAVE_PERIOD UINT32_C(360 * 60 * 1000)
+
+uint32_t lastUpload = 0;
 
 void checkBME();
 void updateState();
@@ -82,7 +84,7 @@ void setup(void)
 
   loadState();
 
-  bsec_virtual_sensor_t sensorList[10] = {
+  bsec_virtual_sensor_t sensorList[12] = {
       BSEC_OUTPUT_RAW_TEMPERATURE,
       BSEC_OUTPUT_RAW_PRESSURE,
       BSEC_OUTPUT_RAW_HUMIDITY,
@@ -93,15 +95,16 @@ void setup(void)
       BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
       BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
       BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
+      BSEC_OUTPUT_RUN_IN_STATUS,
+      BSEC_OUTPUT_GAS_PERCENTAGE,
   };
-  bme.updateSubscription(sensorList, 10, BSEC_SAMPLE_RATE_LP);
+  bme.updateSubscription(sensorList, 12, BSEC_SAMPLE_RATE_LP);
 
   checkBME();
 }
 
 void loop(void)
 {
-  unsigned long time_trigger = millis();
   if (!bme.run())
   {
     checkBME();
@@ -119,7 +122,8 @@ void loop(void)
   float run_in = bme.runInStatus;
 
   // Only upload data to influxdb if power-on stabilization is done
-  if (iaq_acc != 0)
+  // Also only upload max once per 10sec
+  if (iaq_acc != 0 && (millis() - lastUpload) > 10 * 1000)
   {
     if (wifiMulti.run() != WL_CONNECTED)
     {
@@ -141,6 +145,10 @@ void loop(void)
     {
       Serial.println("Failed to connect to influxdb: " + String(influxdb.getLastErrorMessage()));
     }
+    else
+    {
+      lastUpload = millis();
+    }
   }
 
   display.setCursor(0, 0);
@@ -157,7 +165,7 @@ void loop(void)
 
   updateState();
 
-  delay(5000);
+  delay(1000);
 }
 
 void checkBME(void)
