@@ -121,6 +121,11 @@ void loop(void)
   // Only upload data to influxdb if power-on stabilization is done
   if (iaq_acc != 0)
   {
+    if (wifiMulti.run() != WL_CONNECTED)
+    {
+      Serial.println("WiFi connection lost");
+    }
+
     datapoint.clearFields();
 
     datapoint.addField("temperature", temperature);
