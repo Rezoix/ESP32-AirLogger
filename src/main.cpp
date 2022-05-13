@@ -36,6 +36,7 @@ void loadState();
 
 void setup(void)
 {
+  EEPROM.begin(BSEC_MAX_STATE_BLOB_SIZE + 1);
   Serial.begin(115200);
   Serial.println("started");
 
@@ -84,7 +85,7 @@ void setup(void)
 
   loadState();
 
-  bsec_virtual_sensor_t sensorList[12] = {
+  bsec_virtual_sensor_t sensorList[11] = {
       BSEC_OUTPUT_RAW_TEMPERATURE,
       BSEC_OUTPUT_RAW_PRESSURE,
       BSEC_OUTPUT_RAW_HUMIDITY,
@@ -95,10 +96,9 @@ void setup(void)
       BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
       BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
       BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
-      BSEC_OUTPUT_RUN_IN_STATUS,
       BSEC_OUTPUT_GAS_PERCENTAGE,
   };
-  bme.updateSubscription(sensorList, 12, BSEC_SAMPLE_RATE_LP);
+  bme.updateSubscription(sensorList, 11, BSEC_SAMPLE_RATE_LP);
 
   checkBME();
 }
@@ -119,7 +119,6 @@ void loop(void)
   float voc = bme.breathVocEquivalent;
   uint8_t iaq_acc = bme.iaqAccuracy;
   float gas_perc = bme.gasPercentage;
-  float run_in = bme.runInStatus;
 
   // Only upload data to influxdb if power-on stabilization is done
   // Also only upload max once per 10sec
@@ -160,7 +159,6 @@ void loop(void)
   display.println("IAQ: " + String(iaq) + "(" + String(iaq_acc) + "/3)");
   display.println("CO2: " + String(co2));
   display.println("VOC: " + String(voc));
-  display.println("RUN-IN: " + String(run_in));
   display.display();
 
   updateState();
