@@ -29,6 +29,7 @@ const uint8_t bsec_config[] = {
 #define STATE_SAVE_PERIOD UINT32_C(360 * 60 * 1000)
 
 uint32_t lastUpload = 0;
+uint16_t screencount = 0;
 
 void checkBME();
 void updateState();
@@ -75,7 +76,7 @@ void setup(void)
 
   display.setTextSize(1);
   display.setTextWrap(true);
-  display.setTextColor(SSD1327_WHITE);
+  display.setTextColor(SSD1327_GRAYTABLE);
 
   bme.begin(BME680_I2C_ADDR_SECONDARY, Wire);
   Serial.println(String(bme.version.major) + "." + String(bme.version.minor));
@@ -150,7 +151,20 @@ void loop(void)
     }
   }
 
-  display.setCursor(0, 0);
+  if (screencount < 101)
+  {
+    display.setCursor(0, 0);
+  }
+  else if (screencount < 201)
+  {
+    display.setCursor(4, 4);
+  }
+  else
+  {
+    display.setCursor(0, 0);
+    screencount = 0;
+  }
+
   display.clearDisplay();
 
   display.println("Temperature: " + String(temperature) + " C");
@@ -161,6 +175,7 @@ void loop(void)
   display.println("VOC: " + String(voc));
   display.display();
 
+  screencount++;
   updateState();
 
   delay(1000);
