@@ -9,6 +9,7 @@
 #include <bsec.h>
 #include <WiFiMulti.h>
 #include <InfluxDbClient.h>
+#include <map>
 
 #include "secrets.h"
 
@@ -24,13 +25,14 @@ Bsec bme;
 uint8_t bsecState[BSEC_MAX_STATE_BLOB_SIZE] = {0};
 uint16_t stateUpdateCounter = 0;
 const uint8_t bsec_config[] = {
-#include "config/generic_33v_3s_4d/bsec_iaq.txt"
+//#include "config/generic_33v_3s_4d/bsec_iaq.txt"
+#include "config/generic_33v_3s_28d/bsec_iaq.txt"
 };
 #define STATE_SAVE_PERIOD UINT32_C(360 * 60 * 1000)
 
 uint32_t lastUpload = 0;
-uint16_t screencount = 0;
 
+void printTable(std::map<std::string, std::array<float, 5>> values);
 void checkBME();
 void updateState();
 void loadState();
@@ -151,21 +153,23 @@ void loop(void)
     }
   }
 
-  if (screencount < 101)
-  {
-    display.setCursor(0, 0);
-  }
-  else if (screencount < 201)
-  {
-    display.setCursor(4, 4);
-  }
-  else
-  {
-    display.setCursor(0, 0);
-    screencount = 0;
-  }
-
+  display.setCursor(0, 0);
   display.clearDisplay();
+
+  /*   std::map<std::string, std::array<float, 5>> history_values;
+    std::array<float, 5> temp_hist = {-4, -3, -2, -1, temperature};
+    history_values.insert(std::pair<std::string, std::array<float, 5>>("temp", temp_hist));
+
+    std::array<float, 5> rh_hist = {-4, -3, -2, -1, humidity};
+    history_values.insert(std::pair<std::string, std::array<float, 5>>("temp", rh_hist));
+
+    std::array<float, 5> co2_hist = {-4, -3, -2, -1, co2};
+    history_values.insert(std::pair<std::string, std::array<float, 5>>("temp", co2_hist));
+
+    printTable(history_values); */
+
+  // display.printf("%7s%7s%7s%7s%7s%7s\n", "Temp", "RH%", "hPA", "Co2", "VoC", "IaQ");
+  // display.printf("%3s|%3s|%4s|%4s|%3s|%3s\n", "Tmp", "RH%", "hP A", "Co 2", "VoC", "IaQ");
 
   display.println("Temperature: " + String(temperature) + " C");
   display.println("Humidity: " + String(humidity) + "%");
@@ -175,10 +179,18 @@ void loop(void)
   display.println("VOC: " + String(voc));
   display.display();
 
-  screencount++;
   updateState();
 
   delay(1000);
+}
+
+void printTable(std::map<std::string, std::array<float, 5>> values)
+{
+  for (std::map<std::string, std::array<float, 5>>::iterator it = values.begin(); it != values.end(); ++it)
+  {
+    auto v = it->second;
+    display.printf("%4s|%4.0f|%4.0f|%4.0f|%4.0f|%4.0f|%4.0f\n", it->first, v[0], v[1], v[2], v[3], v[4]);
+  }
 }
 
 void checkBME(void)
