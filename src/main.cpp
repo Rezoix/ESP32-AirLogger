@@ -2,7 +2,7 @@
 //    Black - Ground
 //    Blue - I2C SDA Data
 //    Yellow - I2C SCL Clock
-#include <EEPROM.h>
+#include <Preferences.h>
 #include <Wire.h>
 #include <Arduino.h>
 #include <Adafruit_SSD1327.h>
@@ -12,6 +12,8 @@
 #include <map>
 
 #include "secrets.h"
+
+Preferences preferences;
 
 WiFiMulti wifiMulti;
 InfluxDBClient influxdb(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
@@ -43,7 +45,9 @@ void deserializeTm(byte *serialized, tm *object);
 
 void setup(void)
 {
-    EEPROM.begin(BSEC_MAX_STATE_BLOB_SIZE + TMSIZE + 1);
+    preferences.begin("BSEC");
+    preferences.begin("BSECTime");
+
     Serial.begin(115200);
     Serial.println("started");
 
@@ -76,17 +80,6 @@ void setup(void)
         while (1)
             yield();
     }
-
-    Serial.println(TMSIZE);
-
-    /* getLocalTime(&lastStateUpdate);
-    Serial.println(&lastStateUpdate, "%A, %B %d %Y %H:%M:%S");
-    byte serTm[36];
-    serializeTm(&lastStateUpdate, serTm);
-
-    tm newTm;
-    deserializeTm(serTm, &newTm);
-    Serial.println(&newTm, "%A, %B %d %Y %H:%M:%S"); */
 
     display.clearDisplay();
     display.display();
@@ -210,52 +203,6 @@ void printTable(std::map<std::string, std::array<float, 5>> values)
     }
 }
 
-void serializeTm(tm *object, uint8_t *serialized)
-{
-    int *q = (int *)serialized;
-    *q = object->tm_hour;
-    q++;
-    *q = object->tm_isdst;
-    q++;
-    *q = object->tm_mday;
-    q++;
-    *q = object->tm_min;
-    q++;
-    *q = object->tm_mon;
-    q++;
-    *q = object->tm_sec;
-    q++;
-    *q = object->tm_wday;
-    q++;
-    *q = object->tm_yday;
-    q++;
-    *q = object->tm_year;
-    q++;
-}
-
-void deserializeTm(uint8_t *serialized, tm *object)
-{
-    int *q = (int *)serialized;
-    object->tm_hour = *q;
-    q++;
-    object->tm_isdst = *q;
-    q++;
-    object->tm_mday = *q;
-    q++;
-    object->tm_min = *q;
-    q++;
-    object->tm_mon = *q;
-    q++;
-    object->tm_sec = *q;
-    q++;
-    object->tm_wday = *q;
-    q++;
-    object->tm_yday = *q;
-    q++;
-    object->tm_year = *q;
-    q++;
-}
-
 void checkBME(void)
 {
 
@@ -310,35 +257,15 @@ void checkBME(void)
 
 void loadState(void)
 {
-    if (EEPROM.read(0) == BSEC_MAX_STATE_BLOB_SIZE)
+    if (preferences.getBytesLength("BSEC") == BSEC_MAX_STATE_BLOB_SIZE)
     {
-        Serial.println("Loading state from EEPROM");
-        for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++)
-        {
-            bsecState[i] = EEPROM.read(i + 1);
-        }
+        Serial.println("Loading state from NVS");
+        preferences.getBytes("BSEC", bsecState, BSEC_MAX_STATE_BLOB_SIZE);
+        preferences.getBytes("BSECTime", &lastStateUpdate, TMSIZE);
 
-        uint8_t TMSerialized[TMSIZE];
-        for (uint8_t i = 0; i < TMSIZE; i++)
-        {
-            TMSerialized[i] = EEPROM.read(i + 1 + BSEC_MAX_STATE_BLOB_SIZE);
-        }
-        deserializeTm(TMSerialized, &lastStateUpdate);
-        Serial.println(&lastStateUpdate, "State loaded from EEPROM saved at %A, %B %d %Y %H:%M:%S");
-
+        Serial.println(&lastStateUpdate, "State loaded from NVS saved at %A, %B %d %Y %H:%M:%S");
         bme.setState(bsecState);
         checkBME();
-    }
-    else
-    {
-        Serial.println("Clearing EEPROM");
-        for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE + TMSIZE + 1; i++)
-        {
-            EEPROM.write(i, 0);
-        }
-
-        EEPROM.commit();
-        Serial.println("EEPROM Cleared");
     }
 }
 
@@ -346,7 +273,7 @@ void updateState(void)
 {
     bool update = false;
 
-    /* if (stateUpdateCounter == 0)
+    if (stateUpdateCounter == 0)
     {
         if (bme.iaqAccuracy >= 3)
         {
@@ -354,7 +281,7 @@ void updateState(void)
             stateUpdateCounter++;
         }
     }
-    else */
+    else
     {
         if ((stateUpdateCounter * STATE_SAVE_PERIOD) < millis())
         {
@@ -368,23 +295,10 @@ void updateState(void)
         bme.getState(bsecState);
         checkBME();
         getLocalTime(&lastStateUpdate);
-        Serial.println(&lastStateUpdate, "Updating EEPROM state at %A, %B %d %Y %H:%M:%S");
+        Serial.println(&lastStateUpdate, "Updating NVS state at %A, %B %d %Y %H:%M:%S");
 
-        for (uint8_t i = 0; i < BSEC_MAX_STATE_BLOB_SIZE; i++)
-        {
-            EEPROM.write(i + 1, bsecState[i]);
-        }
-
-        uint8_t TMSerialized[TMSIZE];
-        serializeTm(&lastStateUpdate, TMSerialized);
-
-        for (uint8_t i = 0; i < TMSIZE; i++)
-        {
-            EEPROM.write(i + 1 + BSEC_MAX_STATE_BLOB_SIZE, TMSerialized[i]);
-        }
-
-        EEPROM.write(0, BSEC_MAX_STATE_BLOB_SIZE);
-        EEPROM.commit();
-        Serial.println("EEPROM state updated");
+        preferences.putBytes("BSEC", bsecState, BSEC_MAX_STATE_BLOB_SIZE);
+        preferences.putBytes("BSECTime", &lastStateUpdate, TMSIZE);
+        Serial.println("NVS state updated");
     }
 }
