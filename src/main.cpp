@@ -36,7 +36,7 @@ const uint8_t bsec_config[] = {
 uint32_t lastUpload = 0;
 tm lastStateUpdate;
 
-void printTable(std::map<std::string, std::array<float, 5>> values);
+void printTable(std::map<String, std::array<float, 3>> values);
 void checkBME();
 void updateState();
 void loadState();
@@ -166,40 +166,48 @@ void loop(void)
     display.setCursor(0, 0);
     display.clearDisplay();
 
-    /*   std::map<std::string, std::array<float, 5>> history_values;
-      std::array<float, 5> temp_hist = {-4, -3, -2, -1, temperature};
-      history_values.insert(std::pair<std::string, std::array<float, 5>>("temp", temp_hist));
+    /* for (char c = 0; c < 255; c++)
+    {
+        display.printf("%c", c);
+    }
+    display.display(); */
 
-      std::array<float, 5> rh_hist = {-4, -3, -2, -1, humidity};
-      history_values.insert(std::pair<std::string, std::array<float, 5>>("temp", rh_hist));
+    std::map<String, std::array<float, 3>> history_values;
 
-      std::array<float, 5> co2_hist = {-4, -3, -2, -1, co2};
-      history_values.insert(std::pair<std::string, std::array<float, 5>>("temp", co2_hist));
+    std::array<float, 3> temp_hist = {-2, -1, temperature};
+    history_values.insert(std::pair<String, std::array<float, 3>>(String((char)247) + "C", temp_hist));
 
-      printTable(history_values); */
+    std::array<float, 3> rh_hist = {-2, -1, humidity};
+    history_values.insert(std::pair<String, std::array<float, 3>>("Rh", rh_hist));
+
+    std::array<float, 3> co2_hist = {-2, -1, co2};
+    history_values.insert(std::pair<String, std::array<float, 3>>("Co2", co2_hist));
+
+    printTable(history_values);
+    display.display();
 
     // display.printf("%7s%7s%7s%7s%7s%7s\n", "Temp", "RH%", "hPA", "Co2", "VoC", "IaQ");
     // display.printf("%3s|%3s|%4s|%4s|%3s|%3s\n", "Tmp", "RH%", "hP A", "Co 2", "VoC", "IaQ");
 
-    display.println("Temperature: " + String(temperature) + " C");
+    /* display.println("Temperature: " + String(temperature) + " C");
     display.println("Humidity: " + String(humidity) + "%");
     display.println("Pressure: " + String(pressure_hPA) + " hPA");
     display.println("IAQ: " + String(iaq) + "(" + String(iaq_acc) + "/3)");
     display.println("CO2: " + String(co2));
     display.println("VOC: " + String(voc));
-    display.display();
+    display.display(); */
 
     updateState();
 
     delay(1000);
 }
 
-void printTable(std::map<std::string, std::array<float, 5>> values)
+void printTable(std::map<String, std::array<float, 3>> values)
 {
-    for (std::map<std::string, std::array<float, 5>>::iterator it = values.begin(); it != values.end(); ++it)
+    for (std::map<String, std::array<float, 3>>::iterator it = values.begin(); it != values.end(); ++it)
     {
         auto v = it->second;
-        display.printf("%4s|%4.0f|%4.0f|%4.0f|%4.0f|%4.0f|%4.0f\n", it->first, v[0], v[1], v[2], v[3], v[4]);
+        display.printf("%.3s|%3.1f|%3.1f|%3.1f\n", it->first, v[0], v[1], v[2]);
     }
 }
 
