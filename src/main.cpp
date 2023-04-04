@@ -10,8 +10,10 @@
 #include <WiFiMulti.h>
 #include <InfluxDbClient.h>
 #include <map>
+#include "SD.h"
 
 #include "secrets.h"
+#include "sdcard.h"
 
 Preferences preferences;
 
@@ -51,71 +53,104 @@ void setup(void)
     Serial.begin(115200);
     Serial.println("started");
 
-    WiFi.mode(WIFI_STA);
-    wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
-
-    while (wifiMulti.run() != WL_CONNECTED)
+    // WiFi initialization
     {
-        Serial.println("Waiting for WiFi connection");
-        delay(100);
-    }
-    Serial.println("WiFi connected to " + String(WIFI_SSID));
+        WiFi.mode(WIFI_STA);
+        wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
-    timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
-
-    datapoint.addTag("device", "logger1");
-
-    if (influxdb.validateConnection())
-    {
-        Serial.println("Connected to influxdb server: " + String(influxdb.getServerUrl()));
-    }
-    else
-    {
-        Serial.println("Failed to connect to influxdb: " + String(influxdb.getLastErrorMessage()));
+        while (wifiMulti.run() != WL_CONNECTED)
+        {
+            Serial.println("Waiting for WiFi connection");
+            delay(100);
+        }
+        Serial.println("WiFi connected to " + String(WIFI_SSID));
+        timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
     }
 
-    if (!display.begin(0x3D))
+    // Database connection initialization
     {
-        Serial.println("Unable to initialize OLED");
-        while (1)
-            yield();
+        datapoint.addTag("device", "logger1");
+        if (influxdb.validateConnection())
+        {
+            Serial.println("Connected to influxdb server: " + String(influxdb.getServerUrl()));
+        }
+        else
+        {
+            Serial.println("Failed to connect to influxdb: " + String(influxdb.getLastErrorMessage()));
+        }
     }
 
-    display.clearDisplay();
-    display.display();
+    // Display initialization
+    {
+        if (!display.begin(0x3D))
+        {
+            Serial.println("Unable to initialize OLED");
+            while (1)
+                yield();
+        }
 
-    display.setTextSize(1);
-    display.setTextWrap(true);
-    display.setTextColor(SSD1327_GRAYTABLE);
+        display.clearDisplay();
+        display.display();
 
-    bme.begin(BME680_I2C_ADDR_SECONDARY, Wire);
-    Serial.println(String(bme.version.major) + "." + String(bme.version.minor));
+        display.setTextSize(1);
+        display.setTextWrap(true);
+        display.setTextColor(SSD1327_GRAYTABLE);
+    }
 
-    bme.setConfig(bsec_config);
-    checkBME();
+    // SD-Card initialization
+    {
+        while (!SD.begin())
+        {
+            Serial.println("Failed to mount SD card");
+            display.clearDisplay();
+            display.println("SD Card initialization failed");
+            display.display();
+        }
+        uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+        Serial.printf("SD Card Size: %lluMB\n", cardSize);
 
-    loadState();
+        // Initialize csv file
+        if (!fileExists(SD, "/data.csv"))
+        {
+            char *dataHeader = "Timestamp;Temperature;Pressure;Humidity;IAQ;CO2;VOC\n";
+            char *testData = "12345;25;999;70.58;200;487;0.500\n56789;30;1020;72.45;250;500;0.245";
+            writeFile(SD, "/data.csv", dataHeader);
+            appendFile(SD, "/data.csv", testData);
+        }
+    }
 
-    bsec_virtual_sensor_t sensorList[11] = {
-        BSEC_OUTPUT_RAW_TEMPERATURE,
-        BSEC_OUTPUT_RAW_PRESSURE,
-        BSEC_OUTPUT_RAW_HUMIDITY,
-        BSEC_OUTPUT_RAW_GAS,
-        BSEC_OUTPUT_IAQ,
-        BSEC_OUTPUT_STATIC_IAQ,
-        BSEC_OUTPUT_CO2_EQUIVALENT,
-        BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
-        BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
-        BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
-        BSEC_OUTPUT_GAS_PERCENTAGE,
-    };
-    bme.updateSubscription(sensorList, 11, BSEC_SAMPLE_RATE_LP);
+    // BME680 Initialization
+    {
+        bme.begin(BME680_I2C_ADDR_SECONDARY, Wire);
+        Serial.println(String(bme.version.major) + "." + String(bme.version.minor));
 
-    checkBME();
+        bme.setConfig(bsec_config);
+        checkBME();
+
+        loadState();
+
+        bsec_virtual_sensor_t sensorList[11] = {
+            BSEC_OUTPUT_RAW_TEMPERATURE,
+            BSEC_OUTPUT_RAW_PRESSURE,
+            BSEC_OUTPUT_RAW_HUMIDITY,
+            BSEC_OUTPUT_RAW_GAS,
+            BSEC_OUTPUT_IAQ,
+            BSEC_OUTPUT_STATIC_IAQ,
+            BSEC_OUTPUT_CO2_EQUIVALENT,
+            BSEC_OUTPUT_BREATH_VOC_EQUIVALENT,
+            BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_TEMPERATURE,
+            BSEC_OUTPUT_SENSOR_HEAT_COMPENSATED_HUMIDITY,
+            BSEC_OUTPUT_GAS_PERCENTAGE,
+        };
+        bme.updateSubscription(sensorList, 11, BSEC_SAMPLE_RATE_LP);
+
+        checkBME();
+    }
 }
 
 void loop(void)
 {
+
     if (!bme.run())
     {
         checkBME();
