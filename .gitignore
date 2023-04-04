@@ -3,3 +3,4 @@
 include
 lib
 src/secrets.h
+pcb
