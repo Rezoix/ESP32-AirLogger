@@ -10,7 +10,6 @@
 #include <WiFiMulti.h>
 #include <InfluxDbClient.h>
 #include <map>
-#include "SD.h"
 
 #include "secrets.h"
 #include "sdcard.h"
@@ -36,14 +35,12 @@ const uint8_t bsec_config[] = {
 #define TMSIZE sizeof(tm)
 
 uint32_t lastUpload = 0;
-tm lastStateUpdate;
+struct tm lastStateUpdate;
 
 void printTable(std::map<String, std::array<float, 3>> values);
 void checkBME();
 void updateState();
 void loadState();
-void serializeTm(tm *object, byte *serialized);
-void deserializeTm(byte *serialized, tm *object);
 
 void setup(void)
 {
@@ -103,6 +100,7 @@ void setup(void)
         {
             Serial.println("Failed to mount SD card");
             display.clearDisplay();
+            display.setCursor(0, 0);
             display.println("SD Card initialization failed");
             display.display();
         }
@@ -112,10 +110,11 @@ void setup(void)
         // Initialize csv file
         if (!fileExists(SD, "/data.csv"))
         {
-            char *dataHeader = "Timestamp;Temperature;Pressure;Humidity;IAQ;CO2;VOC\n";
-            char *testData = "12345;25;999;70.58;200;487;0.500\n56789;30;1020;72.45;250;500;0.245";
-            writeFile(SD, "/data.csv", dataHeader);
-            appendFile(SD, "/data.csv", testData);
+            const char *dataHeader = "Timestamp;Temperature;Pressure;Humidity;IAQ;IAQAcc;CO2;VOC;Gas%\n";
+            if (writeFile(SD, "/data.csv", dataHeader) != WRITE_OK)
+            {
+                Serial.println("Failed to create data file");
+            }
         }
     }
 
@@ -150,13 +149,15 @@ void setup(void)
 
 void loop(void)
 {
-
+    // Data Collection
     if (!bme.run())
     {
         checkBME();
-        delay(5000);
+        delay(1000);
         return;
     }
+    struct tm ts;
+    getLocalTime(&ts);
 
     float temperature = bme.temperature;
     float humidity = bme.humidity;
@@ -167,11 +168,25 @@ void loop(void)
     uint8_t iaq_acc = bme.iaqAccuracy;
     float gas_perc = bme.gasPercentage;
 
+    // Write to SD
+    // "Timestamp;Temperature;Pressure;Humidity;IAQ;IAQAcc;CO2;VOC;Gas%\n"
+    {
+        char *line;
+        asprintf(&line, "%04d-%02d-%02dT%02d:%02d:%02d;%.3f;%.3f;%.3f;%.3f;%hu;%.3f;%.3f;%.3f\n",
+                 ts.tm_year + 1900, ts.tm_mon, ts.tm_mday, ts.tm_hour, ts.tm_min, ts.tm_sec,
+                 temperature, pressure_hPA, humidity, iaq, iaq_acc, co2, voc, gas_perc);
+
+        if (appendFile(SD, "/data.csv", line) != WRITE_OK)
+        {
+            Serial.println("Failed to append to file");
+        }
+        free(line);
+    }
+
     // Only upload data to influxdb if power-on stabilization is done
     // Also only upload max once per 10sec
     if ((millis() - lastUpload) > 10 * 1000)
     {
-
         if (wifiMulti.run() != WL_CONNECTED)
         {
             Serial.println("WiFi connection lost");
@@ -198,14 +213,9 @@ void loop(void)
         }
     }
 
+    // Display
     display.setCursor(0, 0);
     display.clearDisplay();
-
-    /* for (char c = 0; c < 255; c++)
-    {
-        display.printf("%c", c);
-    }
-    display.display(); */
 
     std::map<String, std::array<float, 3>> history_values;
 

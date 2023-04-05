@@ -2,50 +2,41 @@
 #include "SD.h"
 #include "SPI.h"
 
-// https://github.com/espressif/arduino-esp32/blob/master/libraries/SD/examples/SD_time/SD_time.ino
-void listDir(fs::FS &fs, const char *dirname, uint8_t levels)
+#include "sdcard.h"
+
+bool fileExists(fs::FS &fs, const char *path)
 {
-    Serial.printf("Listing directory: %s\n", dirname);
+    return fs.exists(path);
+}
 
-    File root = fs.open(dirname);
-    if (!root)
-    {
-        Serial.println("Failed to open directory");
-        return;
-    }
-    if (!root.isDirectory())
-    {
-        Serial.println("Not a directory");
-        return;
-    }
+int8_t writeFile(fs::FS &fs, const char *path, const char *data, const char *mode)
+{
+    File file = fs.open(path, mode);
 
-    File file = root.openNextFile();
-    while (file)
+    if (!file)
     {
-        if (file.isDirectory())
-        {
-            Serial.print("  DIR : ");
-            Serial.print(file.name());
-            time_t t = file.getLastWrite();
-            struct tm *tmstruct = localtime(&t);
-            Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n", (tmstruct->tm_year) + 1900, (tmstruct->tm_mon) + 1, tmstruct->tm_mday, tmstruct->tm_hour, tmstruct->tm_min, tmstruct->tm_sec);
-            if (levels)
-            {
-                listDir(fs, file.path(), levels - 1);
-            }
-        }
-        else
-        {
-            Serial.print("  FILE: ");
-            Serial.print(file.name());
-            Serial.print("  SIZE: ");
-            Serial.print(file.size());
-            time_t t = file.getLastWrite();
-            struct tm *tmstruct = localtime(&t);
-            Serial.printf("  LAST WRITE: %d-%02d-%02d %02d:%02d:%02d\n", (tmstruct->tm_year) + 1900, (tmstruct->tm_mon) + 1, tmstruct->tm_mday, tmstruct->tm_hour, tmstruct->tm_min, tmstruct->tm_sec);
-        }
-        file = root.openNextFile();
+        return OPEN_FAILED;
     }
+    if (file.print(data))
+    {
+        file.close();
+        return WRITE_OK;
+    }
+    else
+    {
+        file.close();
+        return WRITE_FAILED;
+    }
+}
+
+int8_t writeFile(fs::FS &fs, const char *path, const char *data)
+{
+    return writeFile(fs, path, data, FILE_WRITE);
+}
+
+int8_t appendFile(fs::FS &fs, const char *path, const char *data)
+{
+    return writeFile(fs, path, data, FILE_APPEND);
 }
 
 void readFile(fs::FS &fs, const char *path)
@@ -63,56 +54,6 @@ void readFile(fs::FS &fs, const char *path)
     while (file.available())
     {
         Serial.write(file.read());
-    }
-    file.close();
-}
-
-bool fileExists(fs::FS &fs, const char *path)
-{
-    File file = fs.open(path);
-    if (!file)
-        return false;
-    return true;
-}
-
-void writeFile(fs::FS &fs, const char *path, const char *data)
-{
-    Serial.printf("Writing file: %s\n", path);
-
-    File file = fs.open(path, FILE_WRITE);
-    if (!file)
-    {
-        Serial.println("Failed to open file for writing");
-        return;
-    }
-    if (file.print(data))
-    {
-        Serial.println("File written");
-    }
-    else
-    {
-        Serial.println("Write failed");
-    }
-    file.close();
-}
-
-void appendFile(fs::FS &fs, const char *path, const char *data)
-{
-    Serial.printf("Appending to file: %s\n", path);
-
-    File file = fs.open(path, FILE_APPEND);
-    if (!file)
-    {
-        Serial.println("Failed to open file for appending");
-        return;
-    }
-    if (file.print(data))
-    {
-        Serial.println("Message appended");
-    }
-    else
-    {
-        Serial.println("Append failed");
     }
     file.close();
 }
@@ -142,52 +83,4 @@ void removeDir(fs::FS &fs, const char *path)
         Serial.println("rmdir failed");
     }
 }
-
-
-
-void appendFile(fs::FS &fs, const char *path, const char *message)
-{
-    Serial.printf("Appending to file: %s\n", path);
-
-    File file = fs.open(path, FILE_APPEND);
-    if (!file)
-    {
-        Serial.println("Failed to open file for appending");
-        return;
-    }
-    if (file.print(message))
-    {
-        Serial.println("Message appended");
-    }
-    else
-    {
-        Serial.println("Append failed");
-    }
-    file.close();
-}
-
-void renameFile(fs::FS &fs, const char *path1, const char *path2)
-{
-    Serial.printf("Renaming file %s to %s\n", path1, path2);
-    if (fs.rename(path1, path2))
-    {
-        Serial.println("File renamed");
-    }
-    else
-    {
-        Serial.println("Rename failed");
-    }
-}
-
-void deleteFile(fs::FS &fs, const char *path)
-{
-    Serial.printf("Deleting file: %s\n", path);
-    if (fs.remove(path))
-    {
-        Serial.println("File deleted");
-    }
-    else
-    {
-        Serial.println("Delete failed");
-    }
-} */
+*/
