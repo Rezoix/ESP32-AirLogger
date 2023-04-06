@@ -2,6 +2,7 @@
 #include "SD.h"
 #include "SPI.h"
 
+#include "main.h"
 #include "sdcard.h"
 
 bool fileExists(fs::FS &fs, const char *path)
@@ -20,12 +21,12 @@ int8_t writeFile(fs::FS &fs, const char *path, const char *data, const char *mod
     if (file.print(data))
     {
         file.close();
-        return WRITE_OK;
+        return WR_OK;
     }
     else
     {
         file.close();
-        return WRITE_FAILED;
+        return WR_FAILED;
     }
 }
 
@@ -37,25 +38,6 @@ int8_t writeFile(fs::FS &fs, const char *path, const char *data)
 int8_t appendFile(fs::FS &fs, const char *path, const char *data)
 {
     return writeFile(fs, path, data, FILE_APPEND);
-}
-
-void readFile(fs::FS &fs, const char *path)
-{
-    Serial.printf("Reading file: %s\n", path);
-
-    File file = fs.open(path);
-    if (!file)
-    {
-        Serial.println("Failed to open file for reading");
-        return;
-    }
-
-    Serial.print("Read from file: ");
-    while (file.available())
-    {
-        Serial.write(file.read());
-    }
-    file.close();
 }
 
 /* void createDir(fs::FS &fs, const char *path)

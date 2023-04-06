@@ -2,22 +2,15 @@
 //    Black - Ground
 //    Blue - I2C SDA Data
 //    Yellow - I2C SCL Clock
-#include <Preferences.h>
-#include <Wire.h>
-#include <Arduino.h>
-#include <Adafruit_SSD1327.h>
-#include <bsec.h>
-#include <WiFiMulti.h>
-#include <InfluxDbClient.h>
-#include <map>
 
+#include "main.h"
 #include "secrets.h"
 #include "sdcard.h"
 
 Preferences preferences;
 
 WiFiMulti wifiMulti;
-InfluxDBClient influxdb(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
+InfluxDBClient influxdb; //(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
 
 Point datapoint("measurement");
 
@@ -37,35 +30,123 @@ const uint8_t bsec_config[] = {
 uint32_t lastUpload = 0;
 struct tm lastStateUpdate;
 
-void printTable(std::map<String, std::array<float, 3>> values);
-void checkBME();
-void updateState();
-void loadState();
+struct configs config;
+struct errorStates errors = {0, 0, 0, 0, 0};
 
 void setup(void)
 {
-    preferences.begin("BSEC");
-    preferences.begin("BSECTime");
-
     Serial.begin(115200);
     Serial.println("started");
 
+    // Display initialization
+    {
+        if (!display.begin(0x3D))
+        {
+            Serial.println("Unable to initialize OLED");
+            while (1)
+                yield();
+        }
+
+        display.setCursor(0, 0);
+        display.clearDisplay();
+        display.display();
+
+        display.setTextSize(1);
+        display.setTextWrap(true);
+        display.setTextColor(SSD1327_GRAYTABLE);
+        display.println("Display Initialized");
+        display.display();
+    }
+
+    // SD-Card initialization
+    {
+        display.println("Initializing SD-Card");
+        display.display();
+        while (!SD.begin())
+        {
+            Serial.println("Failed to mount SD card");
+            display.clearDisplay();
+            display.setCursor(0, 0);
+            display.println("SD Card not found!\nMake sure that a SD card is inserted!");
+            display.display();
+
+            delay(2000);
+        }
+        uint64_t cardSize = SD.cardSize() / (1024 * 1024);
+        Serial.printf("SD Card Size: %lluMB\n", cardSize);
+
+        // Initialize csv file
+        if (!fileExists(SD, "/data.csv"))
+        {
+            display.println("Initializing CSV file");
+            display.display();
+            const char *dataHeader = "Timestamp;Temperature;Pressure;Humidity;IAQ;IAQAcc;CO2;VOC;Gas%\n";
+            if (writeFile(SD, "/data.csv", dataHeader) != WR_OK)
+            {
+                Serial.println("Failed to create data file");
+            }
+        }
+    }
+
+    // nvs_flash_erase();
+    // nvs_flash_init();
+
+    // Preferences (NVS) initialization
+    preferences.begin("config");
+
+    display.println("Loading config");
+    display.display();
+    // Try to load config from preferences. If no config is found, reinitialize config to defaults
+    if (!loadConfig())
+    {
+        struct configs tmpCfg = {5, 2, INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN, WIFI_SSID, WIFI_PASSWORD};
+        config = tmpCfg;
+        saveConfig();
+    }
+
     // WiFi initialization
     {
+        display.print("Connecting to WiFi");
+        display.display();
         WiFi.mode(WIFI_STA);
         wifiMulti.addAP(WIFI_SSID, WIFI_PASSWORD);
 
         while (wifiMulti.run() != WL_CONNECTED)
         {
+            display.print(".");
+            display.display();
             Serial.println("Waiting for WiFi connection");
             delay(100);
         }
+        display.println();
         Serial.println("WiFi connected to " + String(WIFI_SSID));
-        timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+        // timeSync(TZ_INFO, "pool.ntp.org", "time.nis.gov");
+        Serial.print("Syncing time");
+        display.print("Syncing time");
+        configTime(config.GMTOff * 60 * 60, 3600, "pool.ntp.org", "time.nis.gov");
+
+        int i = 0;
+        while (time(nullptr) < 1000000000l && i < 40)
+        {
+            Serial.print(".");
+            display.print(".");
+            display.display();
+            delay(500);
+            i++;
+        }
+        Serial.println();
+        display.println();
+
+        time_t now = time(nullptr);
+        Serial.print("Synchronized time: ");
+        Serial.println(ctime(&now));
     }
 
     // Database connection initialization
     {
+        display.println("Connecting to InfluxDB");
+        display.display();
+        influxdb.setConnectionParams(INFLUXDB_URL, INFLUXDB_ORG, INFLUXDB_BUCKET, INFLUXDB_TOKEN);
         datapoint.addTag("device", "logger1");
         if (influxdb.validateConnection())
         {
@@ -77,51 +158,12 @@ void setup(void)
         }
     }
 
-    // Display initialization
-    {
-        if (!display.begin(0x3D))
-        {
-            Serial.println("Unable to initialize OLED");
-            while (1)
-                yield();
-        }
-
-        display.clearDisplay();
-        display.display();
-
-        display.setTextSize(1);
-        display.setTextWrap(true);
-        display.setTextColor(SSD1327_GRAYTABLE);
-    }
-
-    // SD-Card initialization
-    {
-        while (!SD.begin())
-        {
-            Serial.println("Failed to mount SD card");
-            display.clearDisplay();
-            display.setCursor(0, 0);
-            display.println("SD Card initialization failed");
-            display.display();
-        }
-        uint64_t cardSize = SD.cardSize() / (1024 * 1024);
-        Serial.printf("SD Card Size: %lluMB\n", cardSize);
-
-        // Initialize csv file
-        if (!fileExists(SD, "/data.csv"))
-        {
-            const char *dataHeader = "Timestamp;Temperature;Pressure;Humidity;IAQ;IAQAcc;CO2;VOC;Gas%\n";
-            if (writeFile(SD, "/data.csv", dataHeader) != WRITE_OK)
-            {
-                Serial.println("Failed to create data file");
-            }
-        }
-    }
-
     // BME680 Initialization
     {
+        display.println("Initializing BME");
+        display.display();
         bme.begin(BME680_I2C_ADDR_SECONDARY, Wire);
-        Serial.println(String(bme.version.major) + "." + String(bme.version.minor));
+        Serial.println("BME Version: " + String(bme.version.major) + "." + String(bme.version.minor));
 
         bme.setConfig(bsec_config);
         checkBME();
@@ -145,6 +187,9 @@ void setup(void)
 
         checkBME();
     }
+
+    display.println("Setup done!");
+    display.display();
 }
 
 void loop(void)
@@ -170,17 +215,20 @@ void loop(void)
 
     // Write to SD
     // "Timestamp;Temperature;Pressure;Humidity;IAQ;IAQAcc;CO2;VOC;Gas%\n"
+    char *line;
+    asprintf(&line, "%04d-%02d-%02dT%02d:%02d:%02d;%.3f;%.3f;%.3f;%.3f;%hu;%.3f;%.3f;%.3f\n",
+             ts.tm_year + 1900, ts.tm_mon, ts.tm_mday, ts.tm_hour, ts.tm_min, ts.tm_sec,
+             temperature, pressure_hPA, humidity, iaq, iaq_acc, co2, voc, gas_perc);
+    int8_t status = appendFile(SD, "/data.csv", line);
+    free(line);
+    if (status != WR_OK)
     {
-        char *line;
-        asprintf(&line, "%04d-%02d-%02dT%02d:%02d:%02d;%.3f;%.3f;%.3f;%.3f;%hu;%.3f;%.3f;%.3f\n",
-                 ts.tm_year + 1900, ts.tm_mon, ts.tm_mday, ts.tm_hour, ts.tm_min, ts.tm_sec,
-                 temperature, pressure_hPA, humidity, iaq, iaq_acc, co2, voc, gas_perc);
-
-        if (appendFile(SD, "/data.csv", line) != WRITE_OK)
-        {
-            Serial.println("Failed to append to file");
-        }
-        free(line);
+        Serial.println("Failed to append to file");
+        errors.SDError = status;
+    }
+    else
+    {
+        errors.SDError = 0;
     }
 
     // Only upload data to influxdb if power-on stabilization is done
@@ -354,4 +402,25 @@ void updateState(void)
         preferences.putBytes("BSECTime", &lastStateUpdate, TMSIZE);
         Serial.println("NVS state updated");
     }
+}
+
+bool loadConfig()
+{
+    struct configs newConfig; // = {5, "", "", "", "", "", ""};
+    size_t ret = preferences.getBytes("config", &newConfig, CONFIGSIZE);
+    if (ret != CONFIGSIZE)
+    {
+        Serial.println("Failed to load config from NVS");
+        return false;
+    }
+
+    Serial.println("Config loaded from NVS");
+    config = newConfig;
+    return true;
+}
+
+void saveConfig()
+{
+    preferences.putBytes("config", &config, CONFIGSIZE);
+    return;
 }
