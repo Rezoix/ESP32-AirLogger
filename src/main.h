@@ -1,8 +1,9 @@
 #include <Preferences.h>
 #include <Wire.h>
 #include <Arduino.h>
-#include <Adafruit_SSD1327.h>
-#include <bsec.h>
+// #include <Adafruit_SSD1327.h>
+#include <U8g2lib.h>
+#include <bsec2.h>
 #include <WiFiMulti.h>
 #include <InfluxDbClient.h>
 #include <map>
@@ -22,6 +23,23 @@ struct configs
 };
 
 #define CONFIGSIZE sizeof(configs)
+
+struct outputData
+{
+    int64_t time_stamp;
+    float raw_temperature;
+    float raw_pressure;
+    float raw_humidity;
+    float raw_gas;
+    float iaq;
+    float static_iaq;
+    float co2_equivalent;
+    float bvoc_equivalent;
+    float compensated_temperature;
+    float compensated_humidity;
+    float gas_percentage;
+    uint8_t stabilization_status;
+};
 
 struct errorStates
 {
